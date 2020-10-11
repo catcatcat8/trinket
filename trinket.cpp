@@ -1,6 +1,8 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
+#include <fstream>
+#include <cstring>
 
 #include <openssl/sha.h>
 #include <openssl/rsa.h>
@@ -9,6 +11,8 @@
 
 #define PRIVAT "./privat.txt"
 #define PUBLIC "./public.txt"
+
+int padding = RSA_PKCS1_PADDING;
 
 std::string sha256(const std::string str)  //SHA-256 функция
 {
@@ -25,23 +29,19 @@ std::string sha256(const std::string str)  //SHA-256 функция
     return ss.str();
 }
 
-void RSA_key_generator() {
+void RSA_key_generator() {  //генератор ключей
     RSA *rsa = NULL;
     char *password = "trinket";  //пароль генерации ключей
-    unsigned long bits = 512;  //key size
+    unsigned long bits = 1024;  //key size
     FILE *priv_key_file = NULL, *pub_key_file = NULL;
     /* контекст алгоритма шифрования */
-    const EVP_CIPHER *cipher = NULL;
 
-    priv_key_file = fopen(PRIVAT, "wb");
-    pub_key_file = fopen(PUBLIC, "wb");
+    priv_key_file = fopen(PRIVAT, "w");
+    pub_key_file = fopen(PUBLIC, "w");
 
     rsa = RSA_generate_key(bits, RSA_F4, NULL, NULL);
-    /* Формируем контекст алгоритма шифрования */
-    OpenSSL_add_all_ciphers();
-    cipher = EVP_get_cipherbyname("bf-ofb");
 
-    PEM_write_RSAPrivateKey(priv_key_file, rsa, cipher, NULL, 0, NULL, password);
+    PEM_write_RSAPrivateKey(priv_key_file, rsa, NULL, NULL, NULL, NULL, password);
     PEM_write_RSAPublicKey(pub_key_file, rsa);
 
     fclose(priv_key_file);
@@ -50,6 +50,19 @@ void RSA_key_generator() {
     RSA_free(rsa);
     std::cout << "0: (registration) public_key written to trinket(public.txt), "
                  "private_key written to trinket(privat.txt)" << std::endl;
+}
+
+int private_encrypt(int flen, unsigned char* from, unsigned char* to, RSA* key, int padding) {
+
+    int result = RSA_private_encrypt(flen, from, to, key, padding);
+    return result;
+}
+
+std::string readFile(const std::string& fileName) {
+    std::ifstream f(fileName);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
 }
 
 std::string trinket_generate_hasndshake(RSA *trinket_pkey) {  //handshake брелка
@@ -74,8 +87,27 @@ std::string car_process_challenge(std::string trinket_msg) {  //random challenge
     }
 }
 
-std::string trinket_response(std::string car_challenge) {  //ЭЦП брелка
-    //return ЭЦП
+void trinket_response(std::string car_challenge) {  //ЭЦП брелка
+    RSA   *rsa = NULL;
+    char *password = "trinket";  //пароль генерации ключей
+    char *encrypt = NULL;
+    RSA *privKey = NULL;
+    FILE *priv_key_file;
+    std::string hash_challenge = sha256(car_challenge);
+    std::string prKey = readFile(PRIVAT);
+    priv_key_file = fopen(PRIVAT, "rb");
+    privKey = PEM_read_RSAPrivateKey(priv_key_file, &rsa, NULL, password);
+    fclose(priv_key_file);
+    encrypt = (char*)malloc(RSA_size(privKey));
+    int encrypt_length = private_encrypt(strlen(hash_challenge.c_str()) + 1,
+                                        (unsigned char*)car_challenge.c_str(),
+                                        (unsigned char*)encrypt, privKey, RSA_PKCS1_OAEP_PADDING);
+    if (encrypt_length == -1) {
+        std::cout << "An error occurred in private_encrypt() method";
+    }
+    else {
+        std::cout << "Data has been encrypted." << std::endl;
+    }
 }
 
 bool car_check_response(std::string trinket_response) {  //проверка ЭЦП
@@ -94,7 +126,8 @@ int main(int argc, char* argv[]) {
 
     std::string trinket_msg = trinket_generate_hasndshake(trinket_pubKey);  //брелок генерирует запрос авто
     std::string car_challenge = car_process_challenge(trinket_msg);  //авто генерирует challenge брелку
-    /*std::string trinket_rsp = trinket_response(car_challenge);  //брелок выполняет ЭЦП challenge авто
+    trinket_response(car_challenge);  //брелок выполняет ЭЦП challenge авто
+    /*
     bool car_check_rsp = car_check_response(trinket_rsp);  //автомобиль проверяет ЭЦП брелка
      */
     return 0;
