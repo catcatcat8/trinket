@@ -13,6 +13,7 @@
 #define PUBLIC "./public"
 
 int padding = RSA_PKCS1_PADDING;
+int encrypt_length;
 
 std::string sha256(const std::string str)  //SHA-256 функция
 {
@@ -56,6 +57,19 @@ int private_encrypt(int flen, unsigned char* from, unsigned char* to, RSA* key, 
     return result;
 }
 
+void create_encrypted_file(char* encrypted, RSA* key_pair) {
+
+    FILE* encrypted_file = fopen("encrypted_file.bin", "w");
+    fwrite(encrypted, sizeof(*encrypted), RSA_size(key_pair), encrypted_file);
+    fclose(encrypted_file);
+}
+
+int public_decrypt(int flen, unsigned char* from, unsigned char* to, RSA* key, int padding) {
+
+    int result = RSA_public_decrypt(flen, from, to, key, padding);
+    return result;
+}
+
 std::string trinket_generate_hasndshake(RSA *trinket_pkey) {  //handshake брелка
     std::string trinket_msg = "Open the door";
 
@@ -78,25 +92,41 @@ std::string car_process_challenge(std::string trinket_msg) {  //random challenge
     }
 }
 
-void trinket_response(std::string car_challenge) {  //ЭЦП брелка
+char *trinket_response(std::string car_challenge, RSA *trinket_pub_key) {  //ЭЦП брелка
     RSA *privKey = NULL;
     FILE *priv_key_file;
     std::string hash_challenge = sha256(car_challenge);
     char *encrypt = NULL;
+    char *decrypt = NULL;
     priv_key_file = fopen(PRIVAT, "rb");
     PEM_read_RSAPrivateKey(priv_key_file, &privKey, NULL, NULL);
     fclose(priv_key_file);
     encrypt = (char*)malloc(RSA_size(privKey));
-    int encrypt_length = private_encrypt(strlen(hash_challenge.c_str())+1,
+    encrypt_length = private_encrypt(strlen(hash_challenge.c_str())+1,
                                         (unsigned char*)hash_challenge.c_str(),
                                         (unsigned char*)encrypt, privKey, RSA_PKCS1_PADDING);
     if (encrypt_length != -1) {
-        std::cout << "3: (response) trinket->car: " << (char32_t *) encrypt << " (confirm challenge for trinket)";
+        std::cout << "3: (response) trinket->car: " << (char8_t *) encrypt << " (confirm challenge for trinket)" << std::endl;
     }
+    create_encrypted_file(encrypt, privKey);
+    return encrypt;
 }
 
-bool car_check_response(std::string trinket_response) {  //проверка ЭЦП
-    //если ЭЦП верный - вернуть тру
+bool car_check_response(char *trinket_response, RSA *trinket_pub_key, std::string car_challenge) {  //проверка ЭЦП
+    char *decrypt = NULL;
+    std::string hash_challenge = sha256(car_challenge);
+    decrypt = (char *)malloc(encrypt_length);
+    int decrypt_length = public_decrypt(encrypt_length, (unsigned char*)trinket_response,(unsigned char*)decrypt, trinket_pub_key, RSA_PKCS1_PADDING);
+    if (decrypt_length != -1) {
+        const char *hash = hash_challenge.c_str();
+        if(strcmp(hash, decrypt) == 0) {  //если ЭЦП верна
+            std::cout << "4: (action) car: \n\""<< hash << "\" == \n\"" << decrypt << "\" \n(check response - ok), ";
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -111,9 +141,10 @@ int main(int argc, char* argv[]) {
 
     std::string trinket_msg = trinket_generate_hasndshake(trinket_pubKey);  //брелок генерирует запрос авто
     std::string car_challenge = car_process_challenge(trinket_msg);  //авто генерирует challenge брелку
-    trinket_response(car_challenge);  //брелок выполняет ЭЦП challenge авто
-    /*
-    bool car_check_rsp = car_check_response(trinket_rsp);  //автомобиль проверяет ЭЦП брелка
-     */
+    char *trinket_rspns = trinket_response(car_challenge, trinket_pubKey);  //брелок выполняет ЭЦП challenge авто
+    bool car_check_rspns = car_check_response(trinket_rspns, trinket_pubKey, car_challenge);
+    if (car_check_rspns) {
+        std::cout << "OPEN DOOR" << std::endl;
+    }
     return 0;
 }
