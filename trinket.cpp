@@ -9,8 +9,8 @@
 #include <openssl/bn.h>
 #include <openssl/pem.h>
 
-#define PRIVAT "./privat.txt"
-#define PUBLIC "./public.txt"
+#define PRIVAT "./privat"
+#define PUBLIC "./public"
 
 int padding = RSA_PKCS1_PADDING;
 
@@ -30,24 +30,22 @@ std::string sha256(const std::string str)  //SHA-256 функция
 }
 
 void RSA_key_generator() {  //генератор ключей
-    RSA *rsa = NULL;
     char *password = "trinket";  //пароль генерации ключей
-    unsigned long bits = 1024;  //key size
+    unsigned long bits = 2048;  //key size
     FILE *priv_key_file = NULL, *pub_key_file = NULL;
     /* контекст алгоритма шифрования */
 
     priv_key_file = fopen(PRIVAT, "w");
     pub_key_file = fopen(PUBLIC, "w");
 
-    rsa = RSA_generate_key(bits, RSA_F4, NULL, NULL);
+    RSA *rsa = RSA_generate_key(bits, 59, NULL, NULL);
 
-    PEM_write_RSAPrivateKey(priv_key_file, rsa, NULL, NULL, NULL, NULL, password);
+    PEM_write_RSAPrivateKey(priv_key_file, rsa, NULL, NULL, NULL, NULL, NULL);
     PEM_write_RSAPublicKey(pub_key_file, rsa);
 
     fclose(priv_key_file);
     fclose(pub_key_file);
 
-    RSA_free(rsa);
     std::cout << "0: (registration) public_key written to trinket(public.txt), "
                  "private_key written to trinket(privat.txt)" << std::endl;
 }
@@ -58,18 +56,11 @@ int private_encrypt(int flen, unsigned char* from, unsigned char* to, RSA* key, 
     return result;
 }
 
-std::string readFile(const std::string& fileName) {
-    std::ifstream f(fileName);
-    std::stringstream ss;
-    ss << f.rdbuf();
-    return ss.str();
-}
-
 std::string trinket_generate_hasndshake(RSA *trinket_pkey) {  //handshake брелка
     std::string trinket_msg = "Open the door";
 
-    std::cout << "1: (handshake) trinket->car: trinket_public_key: " <<
-    trinket_pkey << ", trinket_msg: \"" << trinket_msg << "\"" << std::endl;
+    std::cout << "1: (handshake) trinket->car: \"" << trinket_msg << "\" (trinket_msg), "
+    << trinket_pkey << " (trinket_public_key)" << std::endl;
     return trinket_msg;
 }
 
@@ -79,7 +70,7 @@ std::string car_process_challenge(std::string trinket_msg) {  //random challenge
         unsigned long int rnd_chl = rand()%(90000000)+10000000;
         std::string rnd_chl_str = std::to_string(rnd_chl);
         std::string random_challenge = sha256(rnd_chl_str);
-        std::cout << "2: (challenge) car->trinket: challenge_for_trinket: " << random_challenge << std::endl;
+        std::cout << "2: (challenge) car->trinket: " << random_challenge << " (challenge for trinket)" << std::endl;
         return random_challenge;
     }
     else {
@@ -88,25 +79,19 @@ std::string car_process_challenge(std::string trinket_msg) {  //random challenge
 }
 
 void trinket_response(std::string car_challenge) {  //ЭЦП брелка
-    RSA   *rsa = NULL;
-    char *password = "trinket";  //пароль генерации ключей
-    char *encrypt = NULL;
     RSA *privKey = NULL;
     FILE *priv_key_file;
     std::string hash_challenge = sha256(car_challenge);
-    std::string prKey = readFile(PRIVAT);
+    char *encrypt = NULL;
     priv_key_file = fopen(PRIVAT, "rb");
-    privKey = PEM_read_RSAPrivateKey(priv_key_file, &rsa, NULL, password);
+    PEM_read_RSAPrivateKey(priv_key_file, &privKey, NULL, NULL);
     fclose(priv_key_file);
     encrypt = (char*)malloc(RSA_size(privKey));
-    int encrypt_length = private_encrypt(strlen(hash_challenge.c_str()) + 1,
-                                        (unsigned char*)car_challenge.c_str(),
-                                        (unsigned char*)encrypt, privKey, RSA_PKCS1_OAEP_PADDING);
-    if (encrypt_length == -1) {
-        std::cout << "An error occurred in private_encrypt() method";
-    }
-    else {
-        std::cout << "Data has been encrypted." << std::endl;
+    int encrypt_length = private_encrypt(strlen(hash_challenge.c_str())+1,
+                                        (unsigned char*)hash_challenge.c_str(),
+                                        (unsigned char*)encrypt, privKey, RSA_PKCS1_PADDING);
+    if (encrypt_length != -1) {
+        std::cout << "3: (response) trinket->car: " << (char32_t *) encrypt << " (confirm challenge for trinket)";
     }
 }
 
