@@ -8,6 +8,7 @@
 #include <openssl/rsa.h>
 #include <openssl/bn.h>
 #include <openssl/pem.h>
+#include <openssl/rand.h>
 
 #define PRIVAT "./privat"
 #define PUBLIC "./public"
@@ -82,8 +83,9 @@ std::string trinket_generate_hasndshake(RSA *trinket_pkey) {
 std::string car_process_challenge(std::string trinket_msg) {
     std::string error_msg = "ERROR!";
     if (trinket_msg == "Open the door") {
-        unsigned long int rnd_chl = rand()%(90000000)+10000000;
-        std::string rnd_chl_str = std::to_string(rnd_chl);
+        unsigned char buf[32];
+        RAND_bytes(buf, 32);  //генерируем 32 рандомных байта
+        std::string rnd_chl_str((char*) buf);
         std::string random_challenge = sha256(rnd_chl_str);
         std::cout << "2: (challenge) car->trinket: " << random_challenge << " (challenge for trinket)" << std::endl;
         return random_challenge;
@@ -136,8 +138,6 @@ bool car_check_response(char *trinket_response, RSA *trinket_pub_key, std::strin
 }
 
 int main(int argc, char* argv[]) {
-    srand ( time(NULL) );
-
     if (!(std::string(argv[1]) == "--trinket" && std::string(argv[2]) == "open")) {
         std::cout << "Проверьте правильность введенных вами данных\n";
         return 1;
